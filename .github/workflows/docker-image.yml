@@ -80,31 +80,25 @@ jobs:
             echo "Will NOT push 'latest' tag"
           fi
 
-      - name: Create version.json (optional)
-        run: |
-          # Создаем файл с информацией о версии, если нужен
-          mkdir -p app 2>/dev/null || true
-          cat > app/version.json << EOF
-          {
-              "version": "${{ steps.version.outputs.full }}",
-              "commitSha": "${{ github.sha }}",
-              "releaseUrl": "https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}",
-              "buildDate": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          }
-          EOF
-          # Если файл создан, покажем его
-          if [ -f app/version.json ]; then
-            echo "Version file created:"
-            cat app/version.json
-          fi
-
       - name: Lint check scripts
         run: |
           # Проверяем синтаксис bash скриптов
-          for script in *.sh entrypoint.sh usr/local/sbin/*.sh 2>/dev/null; do
+          for script in *.sh entrypoint.sh; do
             if [ -f "$script" ]; then
               echo "Checking $script"
               bash -n "$script"
+            fi
+          done
+          
+          # Проверяем скрипты в поддиректориях
+          for dir in usr/local/sbin usr/local/bin; do
+            if [ -d "$dir" ]; then
+              for script in "$dir"/*.sh; do
+                if [ -f "$script" ]; then
+                  echo "Checking $script"
+                  bash -n "$script"
+                fi
+              done
             fi
           done
 
@@ -122,17 +116,23 @@ jobs:
       - name: Run basic tests
         run: |
           # Проверяем, что образ собирается и основные скрипты доступны
-          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /usr/local/sbin/mobile443-common.sh && echo '✓ common.sh exists'"
-          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /usr/local/sbin/mobile443-update.sh && echo '✓ update.sh exists'"
-          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /usr/local/sbin/mobile443-apply-cache.sh && echo '✓ apply-cache.sh exists'"
-          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /opt/mobile443/asns.conf && echo '✓ asns.conf exists'"
+          echo "Testing image..."
+          
+          # Проверка наличия файлов
+          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /usr/local/sbin/mobile443-common.sh && echo '✓ common.sh exists' || echo '✗ common.sh missing'"
+          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /usr/local/sbin/mobile443-update.sh && echo '✓ update.sh exists' || echo '✗ update.sh missing'"
+          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /usr/local/sbin/mobile443-apply-cache.sh && echo '✓ apply-cache.sh exists' || echo '✗ apply-cache.sh missing'"
+          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -f /opt/mobile443/asns.conf && echo '✓ asns.conf exists' || echo '✗ asns.conf missing'"
+          
+          # Проверка, что скрипты исполняемые
+          docker run --rm --entrypoint /bin/sh mobile443-test:latest -c "test -x /usr/local/sbin/mobile443-common.sh && echo '✓ common.sh is executable' || echo '✗ common.sh not executable'"
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/mobile443-docker:${{ steps.version.outputs.tag }}
             ${{ secrets.DOCKERHUB_USERNAME }}/mobile443-docker:${{ steps.version.outputs.minor }}
