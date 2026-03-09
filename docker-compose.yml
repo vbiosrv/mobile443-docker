@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   mobile443:
-    build: .
+    image: vbiosrv/mobile443-docker:latest
     container_name: mobile443-filter
     restart: unless-stopped
     network_mode: host
@@ -10,14 +10,13 @@ services:
     volumes:
       # Монтируем состояние для сохранения префиксов
       - mobile443-state:/var/lib/mobile443
-      # Монтируем конфигурацию ASN для редактирования
+      # Монтируем конфигурацию ASN для редактирования (опционально)
       - ./asns.conf:/opt/mobile443/asns.conf:ro
     environment:
       - TZ=Europe/Moscow
       - UPDATE_SCHEDULE=0 0 * * *
       - LOG_LEVEL=info
       - FORCE_UPDATE_ON_START=false
-    command: ["daemon"]
     logging:
       driver: "json-file"
       options:
