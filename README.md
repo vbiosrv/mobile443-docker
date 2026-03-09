@@ -6,270 +6,188 @@
   <img src="https://img.shields.io/badge/docker-supported-blue" alt="Docker">
   <img src="https://img.shields.io/badge/iptables-✓-brightgreen" alt="iptables">
   <img src="https://img.shields.io/badge/ipset-✓-brightgreen" alt="ipset">
+  <img src="https://img.shields.io/docker/pulls/vbiosrv/mobile443-docker?style=flat-square&logo=docker" alt="Docker Pulls">
 </p>
 
 <p align="center">
-  <b>🇷🇺 Фильтрация порта 443 для трафика только из мобильных сетей РФ</b><br>
-  <i>4G/LTE - ДОСТУП РАЗРЕШЁН | Wi-Fi/Проводной - ДОСТУП ЗАБЛОКИРОВАН</i>
+  <b>Фильтрация входящего трафика на порт 443 — только мобильные сети РФ</b><br>
+  <i>4G/LTE → разрешено • Wi-Fi / проводной интернет / зарубежные VPN → заблокировано</i>
 </p>
+
+---
+
+**Mobile443** — это Docker-контейнер, который автоматически собирает актуальные префиксы мобильных операторов России и разрешает входящие соединения на порт 443 (HTTPS / QUIC / HTTP/2 / gRPC и т.д.) **только** с этих сетей.
+
+Самый популярный сценарий использования — защита Reality / Vision / gRPC / Trojan-Go бэкендов от бана по IP и от подключений с проводного интернета.
+
+---
+
+## ✨ Возможности
+
+- Автоматическое обновление списков префиксов через RIPEstat API
+- Использование **ipset** + **iptables** для высокой производительности
+- Полная изоляция в Docker (не мусорит на хосте)
+- Поддержка **amd64**, **arm64**, **armv7**
+- Лёгкая настройка ASN под свои нужды
+- Интеграция с Xray / V2Ray / sing-box через cgroup-исключение
+- Минимальное потребление ресурсов (~30–60 МБ RAM)
 
 ---
 
 ## 📋 Содержание
 
-- [О проекте](#о-проекте)
 - [Поддерживаемые операторы](#поддерживаемые-операторы)
 - [Требования](#требования)
 - [Быстрый старт](#быстрый-старт)
+- [Установка и запуск](#установка-и-запуск)
 - [Конфигурация](#конфигурация)
-- [Мониторинг](#мониторинг)
-- [Команды](#команды)
-- [Интеграция с Xray](#интеграция-с-xray)
+- [Мониторинг и отладка](#мониторинг-и-отладка)
+- [Интеграция с Xray / V2Ray](#интеграция-с-xray--v2ray)
+- [Команды управления](#команды-управления)
 - [Удаление](#удаление)
-- [Преимущества Docker версии](#преимущества-docker-версии)
 - [FAQ](#faq)
 - [Лицензия](#лицензия)
 
 ---
 
-## 🎯 О проекте
+## Поддерживаемые операторы (актуально на 2025–2026)
 
-**Mobile443** — это Docker-контейнер для фильтрации входящего трафика на порт 443 (HTTPS/QUIC) на основе IP-адресов отправителя. 
+| Оператор                  | Основной ASN     | Дополнительные ASN                          | Статус |
+|---------------------------|------------------|---------------------------------------------|--------|
+| МТС                       | 8359             | —                                           | ✅     |
+| Билайн (ВымпелКом)        | 3216             | —                                           | ✅     |
+| МегаФон                   | 31133            | + ~30 связанных сетей                       | ✅     |
+| Tele2                     | 12958            | 15378, 42437, 48092, 48190, 41330 и др.     | ✅     |
+| Ростелеком (мобильный)    | 12389            | —                                           | ✅     |
+| Miranda                   | 201776           | —                                           | ✅     |
+| СберМобайл                | 206673           | —                                           | ✅     |
+| Yandex Mobile / Cloud     | 205638           | —                                           | ✅     |
+| Win Mobile (К-телеком)    | 203451           | —                                           | ✅     |
+| Волна Мобайл              | 203561           | —                                           | ✅     |
 
-### 🔍 Принцип работы
-
-1. Собирает префиксы всех мобильных операторов РФ через API RIPEstat
-2. Создает ipset `allowed_mobile_443` со списком разрешенных сетей
-3. Настраивает iptables для блокировки трафика из всех остальных сетей
-📶 Мобильный трафик (4G/LTE) → ✅ РАЗРЕШЁН
-📡 Wi-Fi / Проводной → ❌ БЛОКИРОВКА порта 443
-
-text
-
----
-
-## 📱 Поддерживаемые операторы
-
-| Оператор | ASN | Статус |
-|----------|-----|--------|
-| **MTS** | `8359` | ✅ |
-| **Beeline / VimpelCom** | `3216` | ✅ |
-| **MegaFon** | `31133` + 30 связанных ASN | ✅ |
-| **Tele2** | `12958`, `15378`, `42437`, `48092`, `48190`, `41330` | ✅ |
-| **Rostelecom** | `12389` | ✅ |
-| **Miranda** | `201776` | ✅ |
-| **Sberbank-Telecom** | `206673` | ✅ |
-| **Yandex Cloud** | `205638` | ✅ |
-| **Win mobile (К-телеком)** | `203451` | ✅ |
-| **Volna mobile (KTK TELECOM)** | `203561` | ✅ |
-
-> 📝 **Примечание:** Список ASN можно легко расширить, отредактировав файл `asns.conf`
+> Список ASN можно легко расширить — см. раздел [Конфигурация](#конфигурация)
 
 ---
 
-## 📋 Требования
+## Требования
 
-- **ОС:** Linux (с поддержкой ipset/iptables)
-- **Docker:** 20.10+
-- **Docker Compose:** 2.0+
-- **Ядро:** с поддержкой Netfilter и ipset
+- Linux с поддержкой **ipset** и **iptables** (большинство современных дистрибутивов)
+- Docker 20.10+
+- Рекомендуется Docker Compose v2
+- Запуск с флагами `--privileged` и `--network host`
 
-### 🔧 Необходимые возможности ядра
+Проверка поддержки:
+
 ```bash
-# Проверка поддержки
-modprobe xt_set
-modprobe xt_cgroup
-🚀 Быстрый старт
-1. Клонирование репозитория
-bash
-git clone https://github.com/yourusername/mobile443-docker.git
-cd mobile443-docker
-2. Запуск контейнера
-bash
-# Запуск в фоне
-docker-compose up -d
+uname -r
+lsmod | grep -E 'ip_tables|nfnetlink|ipset|xt_set'
 
-# Просмотр логов
-docker-compose logs -f
-3. Проверка работы
-bash
-# Проверка правил iptables
-docker exec mobile443-filter iptables -L FILTER_MOBILE_443 -n -v
+Быстрый старт (самый простой способ)
+Bashdocker volume create mobile443-state
 
-# Просмотр загруженных префиксов
-docker exec mobile443-filter ipset list allowed_mobile_443 | head -20
-⚙️ Конфигурация
-📝 Переменные окружения
-В файле docker-compose.yml можно настроить:
+docker run -d \
+  --name mobile443 \
+  --privileged \
+  --network host \
+  --restart unless-stopped \
+  -v mobile443-state:/var/lib/mobile443 \
+  vbiosrv/mobile443-docker:latesttemp.sh: line 1: docker: command not found
+temp.sh: line 3: docker: command not found
 
-yaml
-environment:
-  - TZ=Europe/Moscow           # Часовой пояс
-  - UPDATE_SCHEDULE=0 0 * * *  # CRON расписание обновлений
-  - LOG_LEVEL=info              # Уровень логирования (info/debug)
-  - FORCE_UPDATE_ON_START=false # Обновлять при старте?
-📄 Редактирование списка ASN
-Отредактируйте файл asns.conf:
+Через 30–120 секунд фильтр уже активен.
+Проверка:
+Bashdocker logs mobile443
+docker exec mobile443 iptables -L FILTER_MOBILE_443 -n -v
 
-bash
-nano asns.conf
+Установка и запуск (рекомендуемый способ — docker compose)
+Bashmkdir mobile443 && cd mobile443
 
-# Добавьте нужные ASN
-# Например:
-21234  # Новый оператор
-Примените изменения:
+curl -O https://raw.githubusercontent.com/vbiosrv/mobile443-docker/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/vbiosrv/mobile443-docker/main/asns.conf
 
-bash
-docker-compose restart
-# или принудительное обновление
-docker exec mobile443-filter /entrypoint.sh update
-📊 Мониторинг
-📈 Просмотр статистики
-bash
-# Статистика по цепочке
-docker exec mobile443-filter iptables -L FILTER_MOBILE_443 -n -v
+# (опционально) отредактируйте asns.conf под себя
 
-# Пример вывода:
-Chain FILTER_MOBILE_443 (2 references)
- pkts bytes target     prot opt in     out     source               destination
- 123K  75M ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0           match-set allowed_mobile_443 src
- 4567 234K DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0
-🔍 Просмотр загруженных префиксов
-bash
-# Все префиксы
-docker exec mobile443-filter ipset list allowed_mobile_443
+docker compose up -d
 
-# Только первые 30
-docker exec mobile443-filter ipset list allowed_mobile_443 | head -30
+Конфигурация
+Основные переменные окружения
+YAMLenvironment:
+  - TZ=Europe/Moscow
+  - UPDATE_SCHEDULE=0 3 * * *          # каждый день в 03:00
+  - LOG_LEVEL=info                     # или debug
+  - FORCE_UPDATE_ON_START=false
+Добавление своего ASN / оператора
+Создайте файл custom-asns.conf:
+text8359      # МТС
+3216      # Билайн
+42437     # Tele2 дополнительный
+42466     # ещё один оператор
+Подключите в docker-compose.yml:
+YAMLvolumes:
+  - ./custom-asns.conf:/opt/mobile443/asns.conf:ro
+После изменения → перезапуск или
+Bashdocker compose restart
+# или
+docker exec mobile443 /entrypoint.sh update
 
-# Количество префиксов
-docker exec mobile443-filter ipset list allowed_mobile_443 -terse
-📋 Логи
-bash
-# Реальные время логи
-docker-compose logs -f --tail 100
+Мониторинг и отладка
+Bash# Правила и счётчики трафика
+docker exec mobile443 iptables -L FILTER_MOBILE_443 -n -v
 
-# Логи обновлений
-docker exec mobile443-filter cat /var/log/mobile443-cron.log
-🛠 Команды
-🐳 Docker Compose команды
-bash
-# Запуск
-docker-compose up -d
+# Сколько префиксов загружено
+docker exec mobile443 ipset list allowed_mobile_443 -terse
 
-# Остановка
-docker-compose stop
+# Проверка своего IP
+curl ifconfig.me
+docker exec mobile443 ipset test allowed_mobile_443 ВАШ_IP
 
-# Перезапуск
-docker-compose restart
+# Живые логи
+docker logs -f mobile443
 
-# Просмотр статуса
-docker-compose ps
-
-# Логи
-docker-compose logs -f
-🔧 Внутренние команды контейнера
-bash
-# Применить кэшированные правила
-docker exec mobile443-filter /entrypoint.sh apply
-
-# Обновить префиксы и применить
-docker exec mobile443-filter /entrypoint.sh update
-
-# Запустить как демон (по умолчанию)
-docker exec mobile443-filter /entrypoint.sh daemon
-
-# Очистить все правила и ipset
-docker exec mobile443-filter /entrypoint.sh cleanup
-📅 Ручное обновление
-bash
-# Немедленное обновление
-docker exec mobile443-filter /usr/local/sbin/mobile443-update.sh
-
-# Применить кэш
-docker exec mobile443-filter /usr/local/sbin/mobile443-apply-cache.sh
-🔗 Интеграция с Xray
-Для совместной работы с Xray необходимо добавить исключение для трафика самого Xray:
-
-1. Настройка systemd для Xray
-bash
-# /etc/systemd/system/direct.slice
+Интеграция с Xray / V2Ray / sing-box (обязательно!)
+Xray сам генерирует исходящий трафик → может попасть под собственный фильтр.
+Решение — cgroup-исключение
+Bash# 1. Создаём slice
+sudo tee /etc/systemd/system/direct.slice << 'EOF'
 [Unit]
-Description=Срез для трафика, исключенного из фильтрации
+Description=Traffic excluded from mobile443 filter
 Before=sockets.target
-2. Добавление в сервис Xray
-ini
-# /etc/systemd/system/xray.service
+EOF
+
+# 2. Переносим Xray в slice
+sudo mkdir -p /etc/systemd/system/xray.service.d
+sudo tee /etc/systemd/system/xray.service.d/override.conf << 'EOF'
 [Service]
 Slice=direct.slice
-3. Добавление правила в iptables
-bash
-# Исключение трафика Xray из фильтрации
-docker exec mobile443-filter iptables -I FILTER_MOBILE_443 1 -m cgroup --path "/direct.slice" -j ACCEPT
-🧹 Удаление
-Полное удаление
-bash
-# Остановка и удаление контейнера
-docker-compose down -v
+EOF
 
-# Очистка правил iptables на хосте
-iptables -D INPUT -p tcp --dport 443 -j FILTER_MOBILE_443 2>/dev/null || true
-iptables -D INPUT -p udp --dport 443 -j FILTER_MOBILE_443 2>/dev/null || true
-iptables -F FILTER_MOBILE_443 2>/dev/null || true
-iptables -X FILTER_MOBILE_443 2>/dev/null || true
+sudo systemctl daemon-reload
+sudo systemctl restart xray
 
-# Очистка ipset
-ipset destroy allowed_mobile_443 2>/dev/null || true
-ipset destroy allowed_mobile_443_tmp 2>/dev/null || true
-🐳 Преимущества Docker версии
-Преимущество	Описание
-📦 Изоляция	Все зависимости в контейнере, не влияет на хост
-🔄 Простота обновления	Пересобрал образ → перезапустил контейнер
-🌍 Портативность	Работает на любом Linux с Docker
-📊 Мониторинг	Логи через docker logs, стандартные инструменты
-⚙️ Управление	Через docker-compose, systemd не требуется
-🔒 Безопасность	Ограниченные capabilities, привилегии только для сети
-❓ FAQ
-❔ Почему блокируется только порт 443?
-Порт 443 используется для HTTPS и QUIC трафика — это основной порт для защищенных соединений. Остальной трафик остается без изменений.
+# 3. Добавляем правило в начало цепочки
+docker exec mobile443 iptables -I FILTER_MOBILE_443 1 -m cgroup --path "/direct.slice" -j ACCEPT
 
-❔ Как добавить свой ASN?
-Отредактируйте файл asns.conf и добавьте номер ASN в новой строке.
+Удаление
+Bashdocker compose down -v
 
-❔ Как часто обновляются префиксы?
-По умолчанию — ежедневно в 00:00. Можно изменить в переменной UPDATE_SCHEDULE.
+# Если остались правила на хосте
+sudo iptables -F FILTER_MOBILE_443 2>/dev/null
+sudo iptables -X FILTER_MOBILE_443 2>/dev/null
+sudo ipset destroy allowed_mobile_443 2>/dev/null
+sudo ipset destroy allowed_mobile_443_tmp 2>/dev/null
 
-❔ Что делать, если мой трафик блокируется?
-Проверьте, что ваш IP попадает в список разрешенных:
+FAQ
+Почему блокируется только 443 порт?
+Потому что именно он используется для HTTPS / QUIC / Reality / Vision / gRPC. Остальной трафик остаётся открытым.
+Мой мобильный интернет не проходит
+Проверьте: ipset test allowed_mobile_443 ВАШ_IP
+Скорее всего нужен дополнительный ASN оператора.
+Работает ли IPv6?
+Пока нет — только IPv4. IPv6 в планах.
+Как часто обновляются префиксы?
+По умолчанию — раз в сутки. Можно настроить чаще.
+Можно ли без Docker?
+Да — смотрите ветку legacy в этом репозитории.
 
-bash
-curl ifconfig.me
-docker exec mobile443-filter ipset test allowed_mobile_443 ВАШ_IP
-❔ Работает ли с IPv6?
-В текущей версии поддерживается только IPv4. IPv6 планируется в будущих релизах.
-
-❔ Можно ли использовать без Docker?
-Да, есть оригинальный bash-скрипт для установки на хост (см. ветку legacy).
-
-📄 Лицензия
-MIT License. Подробнее в файле LICENSE.
-
-🤝 Вклад в проект
-Fork репозитория
-
-Создайте ветку (git checkout -b feature/amazing)
-
-Commit изменений (git commit -m 'Add amazing feature')
-
-Push в ветку (git push origin feature/amazing)
-
-Откройте Pull Request
-
-📞 Контакты
-GitHub: @yourusername
-
-Telegram: @yourusername
-
-Email: your.email@example.com
-
-<p align="center"> <b>Если проект полезен — поставьте ⭐ на GitHub!</b><br> <i>Сделано с ❤️ для 🇷🇺 мобильного интернета</i> </p> ```"# mobile443-docker" 
+Лицензия
+MIT License
