@@ -1,7 +1,11 @@
 FROM alpine:latest
 
-LABEL maintainer="mobile443" \
-      description="Mobile operator filter for port 443 using ipset/iptables"
+LABEL maintainer="vbiosrv" \
+      org.opencontainers.image.title="mobile443-docker" \
+      org.opencontainers.image.description="Фильтрация порта 443 для трафика только из мобильных сетей РФ" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.url="https://hub.docker.com/r/vbiosrv/mobile443-docker" \
+      org.opencontainers.image.source="https://github.com/vbiosrv/mobile443-docker"
 
 # Установка зависимостей
 RUN apk add --no-cache \
@@ -32,4 +36,4 @@ RUN chmod +x /usr/local/sbin/*.sh /entrypoint.sh
 ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
 
 # Команда по умолчанию
-CMD ["apply"]
+CMD ["daemon"]
